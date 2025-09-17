@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // Create an agent with a specific role
-    let writing_agent = Agent::new(
+    let mut writing_agent = Agent::new(
         agent_llm_config,
         "You are a creative writing assistant that helps create engaging content.".to_string(),
         vec![
