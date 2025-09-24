@@ -1,232 +1,282 @@
-use crate::task::task::Task;
-use merco_llmproxy::{
-    ChatMessage, CompletionKind, CompletionRequest, LlmConfig, LlmProvider, Tool,
-    execute_tool, get_provider, traits::ChatMessageRole,
-};
+use crate::agent::role::{AgentRole, AgentCapabilities};
+use crate::agent::state::{AgentState, AgentContext};
+use crate::agent::output_handler::OutputHandler;
+use merco_llmproxy::{LlmConfig, LlmProvider, Tool};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::fmt;
+use chrono;
 
+/// Core Agent structure
+#[derive(Clone)]
+pub struct Agent {
+    // Basic Information
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    
+    // Role and Capabilities
+    pub role: AgentRole,
+    pub capabilities: AgentCapabilities,
+    
+    // LLM Configuration
+    pub llm_config: AgentLLMConfig,
+    
+    // Tools
+    pub tools: Vec<Tool>,
+    
+    // State and Context
+    pub state: AgentState,
+    pub context: AgentContext,
+    
+    // Output handling
+    pub output_handler: OutputHandler,
+    
+    // LLM Provider
+    pub provider: Arc<dyn LlmProvider + Send + Sync>,
+}
+
+/// LLM Configuration for agents
 #[derive(Debug, Clone)]
 pub struct AgentLLMConfig {
-    base_config: LlmConfig,
-    model_name: String,
-    temperature: f32,
-    max_tokens: u32,
+    pub model_name: String,
+    pub temperature: f32,
+    pub max_tokens: u32,
+    pub original_config: LlmConfig,
 }
 
 impl AgentLLMConfig {
-    pub fn new(
-        base_config: LlmConfig,
-        model_name: String,
-        temperature: f32,
-        max_tokens: u32,
-    ) -> Self {
+    pub fn new(llm_config: LlmConfig, model_name: String, temperature: f32, max_tokens: u32) -> Self {
         Self {
-            base_config,
             model_name,
             temperature,
             max_tokens,
+            original_config: llm_config,
         }
     }
 }
 
-pub struct Agent {
-    llm_config: AgentLLMConfig,
-    provider: Arc<dyn LlmProvider>,
-    pub backstory: String,
-    pub goals: Vec<String>,
-    pub tools: Vec<Tool>,
-    agent_id: String,
+/// Task execution result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskResult {
+    pub success: bool,
+    pub output: String,
+    pub execution_time_ms: u64,
+    pub tokens_used: u32,
+    pub tools_used: Vec<String>,
+    pub metadata: HashMap<String, serde_json::Value>,
 }
 
-impl fmt::Debug for Agent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Agent")
-         .field("llm_config", &self.llm_config)
-         .field("provider", &"<LlmProvider>")
-         .field("backstory", &self.backstory)
-         .field("goals", &self.goals)
-         .field("tools", &self.tools)
-         .field("agent_id", &self.agent_id)
-         .finish()
+/// Agent error types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AgentError {
+    AgentBusy,
+    InvalidTask,
+    LLMError(String),
+    ToolError(String),
+    ValidationError(String),
+    TooManyConcurrentTasks,
+    AgentNotFound,
+    InvalidConfiguration,
+}
+
+impl std::fmt::Display for AgentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentError::AgentBusy => write!(f, "Agent is currently busy"),
+            AgentError::InvalidTask => write!(f, "Invalid task provided"),
+            AgentError::LLMError(msg) => write!(f, "LLM error: {}", msg),
+            AgentError::ToolError(msg) => write!(f, "Tool error: {}", msg),
+            AgentError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
+            AgentError::TooManyConcurrentTasks => write!(f, "Too many concurrent tasks"),
+            AgentError::AgentNotFound => write!(f, "Agent not found"),
+            AgentError::InvalidConfiguration => write!(f, "Invalid configuration"),
+        }
     }
 }
 
-impl Agent {
-    /// Create a new Agent
+impl std::error::Error for AgentError {}
+
+/// Detailed information about a tool call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    /// Name of the tool that was called
+    pub tool_name: String,
+    /// Parameters passed to the tool (as JSON string)
+    pub parameters: String,
+    /// Result returned by the tool (as JSON string)
+    pub result: String,
+    /// Time taken to execute the tool in milliseconds
+    pub execution_time_ms: u64,
+    /// Any error that occurred during tool execution
+    pub error: Option<String>,
+    /// Output format of the tool result
+    pub output_format: String,
+}
+
+impl ToolCall {
     pub fn new(
-        llm_config: AgentLLMConfig,
-        backstory: String,
-        goals: Vec<String>,
-        tools: Vec<Tool>,
+        tool_name: String,
+        parameters: String,
+        result: String,
+        execution_time_ms: u64,
+        output_format: String,
     ) -> Self {
-        let provider = get_provider(llm_config.base_config.clone()).unwrap();
-        let agent_id = format!("agent_{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
-        
         Self {
-            llm_config,
-            backstory,
-            goals,
-            tools,
-            provider,
-            agent_id,
+            tool_name,
+            parameters,
+            result,
+            execution_time_ms,
+            error: None,
+            output_format,
         }
     }
-    
-    /// Execute a task
-    pub async fn call(&mut self, task: Task) -> Result<String, String> {
-        const MAX_RETRIES: usize = 3;
-        
-        for attempt in 1..=MAX_RETRIES {
-            println!("Agent execution attempt {} of {}", attempt, MAX_RETRIES);
-            
-            let mut messages = vec![
-                ChatMessage::new(
-                    ChatMessageRole::System,
-                    Some(self.backstory.clone()),
-                    None,
-                    None,
-                ),
-                ChatMessage::new(
-                    ChatMessageRole::User,
-                    Some(self.goals.clone().join("\n")),
-                    None,
-                    None,
-                ),
-            ];
-            
-            messages.push(ChatMessage::new(
-                ChatMessageRole::User,
-                Some(format!(
-                    "TASK: {}\n\nEXPECTED OUTPUT: {}\n\nOUTPUT FORMAT:\n{}",
-                    task.description,
-                    task.expected_output.as_ref().unwrap_or(&"None".to_string()),
-                    task.get_format_prompt()
-                )),
-                None,
-                None,
-            ));
 
-            // Execute the task with the LLM
-            let raw_result = match self.execute_with_llm(&mut messages).await {
-                Ok(result) => result,
-                Err(e) => {
-                    if attempt == MAX_RETRIES {
-                        return Err(format!("LLM execution failed after {} attempts: {}", MAX_RETRIES, e));
-                    }
-                    println!("LLM execution failed on attempt {}: {}. Retrying...", attempt, e);
-                    continue;
-                }
-            };
-
-            // Validate the output
-            match task.validate_output(&raw_result) {
-                Ok(()) => {
-                    println!("Output validation successful on attempt {}", attempt);
-                    return Ok(raw_result);
-                }
-                Err(validation_error) => {
-                    if attempt == MAX_RETRIES {
-                        return Err(format!(
-                            "Output validation failed after {} attempts. Last error: {}. Raw output: {}",
-                            MAX_RETRIES, validation_error, raw_result
-                        ));
-                    }
-                    println!(
-                        "Output validation failed on attempt {}: {}. Retrying...", 
-                        attempt, validation_error
-                    );
-                    
-                    // Add feedback message for retry
-                    messages.push(ChatMessage::new(
-                        ChatMessageRole::User,
-                        Some(format!(
-                            "Your previous response was invalid: {}. Please provide a corrected response that follows the required format exactly.",
-                            validation_error
-                        )),
-                        None,
-                        None,
-                    ));
-                }
-            }
-        }
-        
-        Err("Maximum retry attempts exceeded".to_string())
-    }
-
-    /// Execute a task with user context
-    pub async fn call_with_user(&mut self, task: Task, _user_id: Option<String>) -> Result<String, String> {
-        // For now, just call the regular call method
-        // User context can be added to the task description if needed
-        self.call(task).await
-    }
-
-    /// Core LLM execution logic
-    async fn execute_with_llm(&self, messages: &mut Vec<ChatMessage>) -> Result<String, String> {
-        loop {
-            let request = CompletionRequest::new(
-                messages.clone(),
-                self.llm_config.model_name.clone(),
-                Some(self.llm_config.temperature),
-                Some(self.llm_config.max_tokens),
-                Some(self.tools.clone()),
-            );
-
-        match self.provider.completion(request).await {
-            Ok(response) => {
-                match response.kind {
-                    CompletionKind::Message { content } => {
-                            return Ok(content);
-                    }
-                    CompletionKind::ToolCall { tool_calls } => {
-                            messages.push(ChatMessage::new(
-                                ChatMessageRole::Assistant,
-                                None,
-                                Some(tool_calls.clone()),
-                                None,
-                            ));
-                            
-                        for call in tool_calls {
-                                let tool_result_content = match execute_tool(&call.function.name, &call.function.arguments) {
-                                        Ok(result) => result,
-                                        Err(e) => {
-                                            eprintln!("Tool Execution Error: {}", e);
-                                            format!("Error executing tool {}: {}", call.function.name, e)
-                                    }
-                                };
-                                
-                                messages.push(ChatMessage::new(
-                                    ChatMessageRole::Tool,
-                                    Some(tool_result_content),
-                                    None,
-                                    Some(call.id),
-                                ));
-                            }
-                        }
-                    }
-                },
-                Err(e) => return Err(e.to_string()),
-            }
+    pub fn with_error(
+        tool_name: String,
+        parameters: String,
+        error: String,
+        execution_time_ms: u64,
+        output_format: String,
+    ) -> Self {
+        Self {
+            tool_name,
+            parameters,
+            result: String::new(),
+            execution_time_ms,
+            error: Some(error),
+            output_format,
         }
     }
-    
-    /// Get agent information
-    pub fn get_agent_id(&self) -> &str {
-        &self.agent_id
+}
+
+// Agent Response structure with comprehensive metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentResponse {
+    /// The actual response content from the agent
+    pub content: String,
+    /// Whether the task was completed successfully
+    pub success: bool,
+    /// Time taken to complete the task in milliseconds
+    pub execution_time_ms: u64,
+    /// Number of tokens used in the request
+    pub input_tokens: u32,
+    /// Number of tokens generated in the response
+    pub output_tokens: u32,
+    /// Total tokens used (input + output)
+    pub total_tokens: u32,
+    /// Tools that were used during execution
+    pub tools_used: Vec<String>,
+    /// Detailed information about tool calls made during execution
+    pub tool_calls: Vec<ToolCall>,
+    /// Number of tool calls made
+    pub tool_calls_count: usize,
+    /// Total time spent executing tools in milliseconds
+    pub tool_execution_time_ms: u64,
+    /// Output format of the agent's response
+    pub output_format: String,
+    /// Model used for the response
+    pub model_used: String,
+    /// Temperature setting used
+    pub temperature: f32,
+    /// Any error message if the task failed
+    pub error: Option<String>,
+    /// Additional metadata about the execution
+    pub metadata: HashMap<String, serde_json::Value>,
+    /// Timestamp when the response was generated
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+impl AgentResponse {
+    /// Create a successful response
+    pub fn success(
+        content: String,
+        execution_time_ms: u64,
+        input_tokens: u32,
+        output_tokens: u32,
+        model_used: String,
+        temperature: f32,
+        tools_used: Vec<String>,
+        tool_calls: Vec<ToolCall>,
+        output_format: String,
+    ) -> Self {
+        let tool_execution_time_ms = tool_calls.iter().map(|tc| tc.execution_time_ms).sum();
+        Self {
+            content,
+            success: true,
+            execution_time_ms,
+            input_tokens,
+            output_tokens,
+            total_tokens: input_tokens + output_tokens,
+            tools_used,
+            tool_calls: tool_calls.clone(),
+            tool_calls_count: tool_calls.len(),
+            tool_execution_time_ms,
+            output_format,
+            model_used,
+            temperature,
+            error: None,
+            metadata: HashMap::new(),
+            timestamp: chrono::Utc::now(),
+        }
     }
 
-    /// Get agent goals
-    pub fn get_goals(&self) -> &[String] {
-        &self.goals
+    /// Create an error response
+    pub fn error(
+        error: String,
+        execution_time_ms: u64,
+        model_used: String,
+        temperature: f32,
+        output_format: String,
+    ) -> Self {
+        Self {
+            content: String::new(),
+            success: false,
+            execution_time_ms,
+            input_tokens: 0,
+            output_tokens: 0,
+            total_tokens: 0,
+            tools_used: Vec::new(),
+            tool_calls: Vec::new(),
+            tool_calls_count: 0,
+            tool_execution_time_ms: 0,
+            output_format,
+            model_used,
+            temperature,
+            error: Some(error),
+            metadata: HashMap::new(),
+            timestamp: chrono::Utc::now(),
+        }
     }
 
-    /// Get agent backstory
-    pub fn get_backstory(&self) -> &str {
-        &self.backstory
+    /// Check if the response was successful
+    pub fn is_success(&self) -> bool {
+        self.success
     }
 
-    /// Get available tools
-    pub fn get_tools(&self) -> &[Tool] {
-        &self.tools
+    /// Get the error message if any
+    pub fn get_error(&self) -> Option<&String> {
+        self.error.as_ref()
+    }
+
+    /// Get the output content
+    pub fn get_output(&self) -> &str {
+        &self.content
+    }
+
+    /// Calculate tokens per second
+    pub fn tokens_per_second(&self) -> f64 {
+        if self.execution_time_ms > 0 {
+            (self.total_tokens as f64) / (self.execution_time_ms as f64 / 1000.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Estimate cost based on token usage (placeholder implementation)
+    pub fn estimated_cost(&self) -> f64 {
+        // This would need to be implemented based on actual pricing
+        // For now, return a placeholder calculation
+        self.total_tokens as f64 * 0.0001
     }
 }

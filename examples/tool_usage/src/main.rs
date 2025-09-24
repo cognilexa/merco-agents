@@ -1,238 +1,167 @@
 use merco_agents::agent::agent::{Agent, AgentLLMConfig};
-use merco_agents::task::task::{Task, JsonFieldType};
-use merco_llmproxy::{LlmConfig, Provider, get_tools_by_names, merco_tool};
-use dotenv::dotenv;
-use chrono::prelude::*;
+use merco_agents::agent::role::{OutputFormat, AgentRole, AgentCapabilities, ProcessingMode};
+use merco_agents::task::task::Task;
+use merco_llmproxy::LlmConfig;
+use merco_llmproxy::merco_tool;
+use merco_llmproxy::get_all_tools;
+use std::env;
+use serde_json::json;
+use chrono::Utc;
 
-// Tool 1: Get current time
-#[merco_tool(description = "Get the current date and time")]
-pub fn get_current_time() -> String {
-    let now: DateTime<Local> = Local::now();
-    now.format("%Y-%m-%d %H:%M:%S %Z").to_string()
+// Define tools using merco_tool macro from merco-llmproxy
+#[merco_tool(description = "Perform mathematical calculations")]
+fn calculate(operation: String, a: f64, b: f64) -> serde_json::Value {
+    let result = match operation.as_str() {
+        "add" => a + b,
+        "subtract" => a - b,
+        "multiply" => a * b,
+        "divide" => if b != 0.0 { a / b } else { return json!({"error": "Division by zero"}) },
+        _ => return json!({"error": format!("Unknown operation: {}", operation)}),
+    };
+
+    println!("!!!!!!!!!!!!!!!! calculate result: {}", result);
+    
+    json!({
+        "result": result,
+        "operation": operation,
+        "inputs": {"a": a, "b": b}
+    })
 }
 
-// Tool 2: Calculate simple math
-#[merco_tool(description = "Calculate basic mathematical operations (add, subtract, multiply, divide). Format: 'operation,number1,number2' e.g., 'add,5,3'")]
-pub fn calculate(expression: String) -> String {
-    let parts: Vec<&str> = expression.split(',').collect();
-    if parts.len() != 3 {
-        return "Error: Please provide operation,number1,number2".to_string();
-    }
-    
-    let operation = parts[0].trim();
-    let num1: f64 = match parts[1].trim().parse() {
-        Ok(n) => n,
-        Err(_) => return format!("Error: '{}' is not a valid number", parts[1]),
-    };
-    let num2: f64 = match parts[2].trim().parse() {
-        Ok(n) => n,
-        Err(_) => return format!("Error: '{}' is not a valid number", parts[2]),
-    };
-    
-    let result = match operation {
-        "add" => num1 + num2,
-        "subtract" => num1 - num2,
-        "multiply" => num1 * num2,
-        "divide" => {
-            if num2 == 0.0 {
-                return "Error: Division by zero".to_string();
-            }
-            num1 / num2
-        },
-        _ => return format!("Error: Unknown operation '{}'. Use add, subtract, multiply, or divide", operation),
-    };
-    
-    format!("{} {} {} = {}", num1, operation, num2, result)
+#[merco_tool(description = "Get weather information for a city")]
+fn get_weather(city: String) -> serde_json::Value {
+    // Simulate weather data
+    println!("get_weather result: {}", city);
+    json!({
+        "city": city,
+        "temperature": "22°C",
+        "condition": "Sunny",
+        "humidity": "65%",
+        "wind": "10 km/h"
+    })
 }
 
-// Tool 3: Generate random number
-#[merco_tool(description = "Generate a random number between min and max (inclusive). Format: 'min,max' e.g., '1,100'")]
-pub fn random_number(range: String) -> String {
-    let parts: Vec<&str> = range.split(',').collect();
-    if parts.len() != 2 {
-        return "Error: Please provide min,max".to_string();
-    }
-    
-    let min: i32 = match parts[0].trim().parse() {
-        Ok(n) => n,
-        Err(_) => return format!("Error: '{}' is not a valid number", parts[0]),
-    };
-    let max: i32 = match parts[1].trim().parse() {
-        Ok(n) => n,
-        Err(_) => return format!("Error: '{}' is not a valid number", parts[1]),
-    };
-    
-    if min > max {
-        return "Error: min cannot be greater than max".to_string();
-    }
-    
-    let random_num = min + (rand::random::<u32>() % (max - min + 1) as u32) as i32;
-    format!("Random number between {} and {}: {}", min, max, random_num)
-}
-
-// Tool 4: Text analysis
-#[merco_tool(description = "Analyze text and return word count, character count, and sentence count")]
-pub fn analyze_text(text: String) -> String {
-    let word_count = text.split_whitespace().count();
-    let char_count = text.chars().count();
-    let sentence_count = text.split(['.', '!', '?']).filter(|s| !s.trim().is_empty()).count();
-    
-    format!(
-        "Text Analysis: {} characters, {} words, {} sentences",
-        char_count, word_count, sentence_count
-    )
+#[merco_tool(description = "Get the current time")]
+fn get_current_time() -> serde_json::Value {
+    let now = Utc::now();
+    println!("get_current_time result: {}", now.to_rfc3339());
+    json!({
+        "timestamp": now.to_rfc3339(),
+        "formatted": now.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+    })
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    dotenv().ok();
-
-    println!("🛠️  Tool Usage Example");
-    println!("=====================");
-
-    let api_key = std::env::var("OPENROUTER_API_KEY")
-        .expect("Please set OPENROUTER_API_KEY environment variable");
-
-    let llm_config = LlmConfig::new(Provider::OpenAI)
-        .with_base_url("https://openrouter.ai/api/v1".to_string())
-        .with_api_key(api_key);
-
-    let agent_llm_config = AgentLLMConfig::new(
-        llm_config, 
-        "openai/gpt-4o-mini".to_string(), 
-        0.0, 
-        1000
-    );
-
-    // Get available tools
-    let tools = get_tools_by_names(&[
-        "get_current_time",
-        "calculate", 
-        "random_number",
-        "analyze_text"
-    ]);
-
-    let assistant_agent = Agent::new(
-        agent_llm_config,
-        "You are a helpful assistant with access to various tools. Use the tools when needed to provide accurate information.".to_string(),
-        vec![
-            "Use tools to get accurate, real-time information".to_string(),
-            "Always call the appropriate tool when the user asks for calculations, time, random numbers, or text analysis".to_string(),
-            "Provide clear, helpful responses based on tool results".to_string(),
-        ],
-        tools,
-    );
-
-    // Example 1: Time-based task
-    println!("\n⏰ Example 1: Current Time Query");
-    let time_task = Task::new(
-        "What time is it right now? Please include the date as well.".to_string(),
-        Some("Current date and time information.".to_string()),
-    );
-
-    match assistant_agent.call(time_task).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-        },
-        Err(e) => println!("❌ Error: {}", e),
-    }
-
-    // Example 2: Mathematical calculation
-    println!("\n🧮 Example 2: Mathematical Calculation");
-    let math_task = Task::new(
-        "Calculate 25 multiplied by 8, then add 17 to the result.".to_string(),
-        Some("Step-by-step calculation with final result.".to_string()),
-    );
-
-    match assistant_agent.call(math_task).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-        },
-        Err(e) => println!("❌ Error: {}", e),
-    }
-
-    // Example 3: Random number generation with JSON output
-    println!("\n🎲 Example 3: Random Number Generator (JSON Format)");
-    let random_task = Task::new_simple_json(
-        "Generate 3 random numbers between 1 and 100, and tell me the current time.".to_string(),
-        Some("Random numbers and time information in structured format.".to_string()),
-        vec![
-            ("current_time".to_string(), JsonFieldType::String),
-            ("random_numbers".to_string(), JsonFieldType::Array(Box::new(JsonFieldType::Number))),
-            ("range_min".to_string(), JsonFieldType::Number),
-            ("range_max".to_string(), JsonFieldType::Number),
-            ("count".to_string(), JsonFieldType::Number),
-        ],
-        true, // strict mode
-    );
-
-    match assistant_agent.call(random_task).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result) {
-                println!("\n🔍 JSON validation passed!");
-                println!("📦 Pretty printed:");
-                println!("{}", serde_json::to_string_pretty(&parsed)?);
-            }
-        },
-        Err(e) => println!("❌ Error: {}", e),
-    }
-
-    // Example 4: Text analysis
-    println!("\n📝 Example 4: Text Analysis");
-    let text_task = Task::new(
-        "Analyze this text: 'Artificial intelligence is transforming the world. It helps us solve complex problems. The future looks very promising!'".to_string(),
-        Some("Text analysis results with counts and insights.".to_string()),
-    );
-
-    match assistant_agent.call(text_task).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-        },
-        Err(e) => println!("❌ Error: {}", e),
-    }
-
-    // Example 5: Multi-tool usage with JSON output
-    println!("\n🎯 Example 5: Multi-Tool Analysis (JSON Format)");
-    let multi_task = Task::new_simple_json(
-        "Create a report with: current time, a random number between 1-10, the result of 15 divided by 3, and analysis of the text 'Hello world! How are you today?'".to_string(),
-        Some("Complete report using multiple tools in JSON format.".to_string()),
-        vec![
-            ("timestamp".to_string(), JsonFieldType::String),
-            ("random_number".to_string(), JsonFieldType::Number),
-            ("division_result".to_string(), JsonFieldType::Number),
-            ("text_analysis".to_string(), JsonFieldType::Object),
-            ("report_generated".to_string(), JsonFieldType::Boolean),
-        ],
-        true, // strict mode
-    );
-
-    match assistant_agent.call(multi_task).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result) {
-                println!("\n🔍 Multi-tool JSON validation passed!");
-                println!("📦 Pretty printed:");
-                println!("{}", serde_json::to_string_pretty(&parsed)?);
-            }
-        },
-        Err(e) => println!("❌ Error: {}", e),
-    }
-
-    println!("\n🎉 Tool Usage Example Complete!");
-    println!("Demonstrated features:");
-    println!("  ✅ Multiple custom tools integration");
-    println!("  ✅ Time and date tools");
-    println!("  ✅ Mathematical calculation tools");
-    println!("  ✅ Random number generation");
-    println!("  ✅ Text analysis tools");
-    println!("  ✅ JSON output with tool results");
-    println!("  ✅ Multi-tool usage in single tasks");
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load environment variables
+    dotenv::dotenv().ok();
     
+    // Get API key from environment
+    let api_key = env::var("OPENROUTER_API_KEY")
+        .expect("Please set OPENROUTER_API_KEY environment variable");
+    
+    println!("🔧 Tool Usage Example with Merco Macros");
+    println!("=======================================");
+    
+    // Create LLM configuration
+    let llm_config = LlmConfig {
+        provider: merco_llmproxy::config::Provider::OpenAI,
+        base_url: Some("https://openrouter.ai/api/v1".to_string()),
+        api_key: Some(api_key),
+    };
+    
+    let agent_llm_config = AgentLLMConfig::new(
+        llm_config,
+        "openai/gpt-4o-mini".to_string(),
+        0.7,
+        1000,
+    );
+    
+    // Create agent with tools (tools are automatically registered via macros)
+    let role = AgentRole::new(
+        "Tool Assistant".to_string(),
+        "You are a helpful assistant with access to various tools. Use them when appropriate to help users.".to_string(),
+    );
+    let capabilities = AgentCapabilities {
+        max_concurrent_tasks: 1,
+        supported_output_formats: vec![OutputFormat::Text, OutputFormat::Json],
+        processing_modes: vec![ProcessingMode::Sequential],
+    };
+    
+    // Get all registered tools from the global registry
+    let available_tools = merco_llmproxy::get_all_tools();
+    println!("📋 Available tools from registry: {:?}", available_tools.iter().map(|t| &t.name).collect::<Vec<_>>());
+    
+    let mut agent = Agent::new(
+        "Tool Assistant".to_string(),
+        "Specializes in using tools to help users".to_string(),
+        role,
+        agent_llm_config,
+        available_tools, // Use tools from the global registry
+        capabilities,
+    );
+    
+    println!("✅ Agent created with merco tool macros");
+    println!("Available tools: calculate, get_weather, get_current_time");
+    
+    // Test tasks that require tools
+    let tasks = vec![
+        "What is 15 multiplied by 23?",
+        "What's the weather like in Paris?",
+        "What time is it now?",
+        "Calculate 100 divided by 4, then tell me the current time",
+    ];
+    
+    for (i, task_description) in tasks.iter().enumerate() {
+        println!("\n📝 Task {}: {}", i + 1, task_description);
+        println!("{}", "-".repeat(50));
+        
+        let task = Task::new(
+            task_description.to_string(),
+            Some("Use appropriate tools to provide accurate information".to_string()),
+        );
+        
+        let response = agent.call(task).await;
+        
+        if response.success {
+            println!("✅ Task completed successfully!");
+            println!("Response: {}", response.content);
+            println!("📊 Metrics: {}ms, {} tokens, {:.2} tokens/sec", 
+                response.execution_time_ms, 
+                response.total_tokens, 
+                response.tokens_per_second());
+            
+            // Show detailed tool information
+            if !response.tool_calls.is_empty() {
+                println!("🔧 Tool Calls ({})", response.tool_calls_count);
+                for (i, tool_call) in response.tool_calls.iter().enumerate() {
+                    println!("  {}. {} ({}ms)", i + 1, tool_call.tool_name, tool_call.execution_time_ms);
+                    println!("     Parameters: {}", tool_call.parameters);
+                    println!("     Result: {}", tool_call.result);
+                    if let Some(error) = &tool_call.error {
+                        println!("     Error: {}", error);
+                    }
+                }
+                println!("  Total tool execution time: {}ms", response.tool_execution_time_ms);
+            } else if !response.tools_used.is_empty() {
+                println!("🔧 Tools used: {}", response.tools_used.join(", "));
+            }
+            
+            // Show output format
+            println!("📋 Output format: {}", response.output_format);
+        } else {
+            println!("❌ Task failed: {}", response.error.unwrap_or("Unknown error".to_string()));
+        }
+    }
+    
+    // Show agent performance
+    println!("\n📊 Agent Performance:");
+    let metrics = agent.get_performance_metrics();
+    println!("Total tasks: {}", metrics.total_tasks);
+    println!("Successful tasks: {}", metrics.successful_tasks);
+    println!("Failed tasks: {}", metrics.failed_tasks);
+    println!("Success rate: {:.2}%", agent.get_success_rate() * 100.0);
+    
+    println!("\n🎉 Tool usage example with merco macros completed!");
     Ok(())
 }

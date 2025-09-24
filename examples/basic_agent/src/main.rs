@@ -1,89 +1,105 @@
 use merco_agents::agent::agent::{Agent, AgentLLMConfig};
 use merco_agents::task::task::Task;
-use merco_llmproxy::{LlmConfig, Provider};
-use dotenv::dotenv;
+use merco_llmproxy::LlmConfig;
+use std::env;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables
-    dotenv().ok();
-
-    println!("🤖 Basic Agent Example");
-    println!("====================");
-
-    // Get API key
-    let api_key = std::env::var("OPENROUTER_API_KEY")
+    dotenv::dotenv().ok();
+    
+    // Get API key from environment
+    let api_key = env::var("OPENROUTER_API_KEY")
         .expect("Please set OPENROUTER_API_KEY environment variable");
-
-    // Configure LLM
-    let llm_config = LlmConfig::new(Provider::OpenAI)
-        .with_base_url("https://openrouter.ai/api/v1".to_string())
-        .with_api_key(api_key);
-
+    
+    println!("🤖 Basic Agent Example");
+    println!("=====================");
+    
+    // Create LLM configuration
+    let llm_config = LlmConfig {
+        provider: merco_llmproxy::config::Provider::OpenAI,
+        api_key: Some(api_key),
+        base_url: Some("https://openrouter.ai/api/v1".to_string()),
+    };
+    
     let agent_llm_config = AgentLLMConfig::new(
-        llm_config, 
-        "openai/gpt-4o-mini".to_string(), 
-        0.0, 
-        1000
+        llm_config,
+        "openai/gpt-4o-mini".to_string(),
+        0.7,
+        1000,
     );
-
-    // Create an agent with a specific role
-    let mut writing_agent = Agent::new(
+    
+    // Create a basic agent
+    let mut agent = Agent::new(
         agent_llm_config,
-        "You are a creative writing assistant that helps create engaging content.".to_string(),
+        "You are a helpful AI assistant that provides clear and concise answers.".to_string(),
         vec![
-            "Write clear and engaging content".to_string(),
-            "Maintain a professional yet friendly tone".to_string(),
-            "Be creative but accurate".to_string(),
+            "Help users with their questions".to_string(),
+            "Provide accurate information".to_string(),
+            "Be friendly and professional".to_string(),
         ],
         vec![], // No tools for this basic example
     );
-
-    // Example 1: Simple question
-    println!("\n📝 Example 1: Simple Question");
-    let task1 = Task::new(
-        "Explain what artificial intelligence is in simple terms.".to_string(),
-        Some("A clear, beginner-friendly explanation in 2-3 sentences.".to_string()),
+    
+    println!("✅ Agent created successfully!");
+    println!("Agent ID: {}", agent.get_id());
+    println!("Agent Name: {}", agent.get_name());
+    println!("Agent Status: {:?}", agent.get_state().status);
+    
+    // Create a simple task
+    let task = Task::new(
+        "Explain what artificial intelligence is in simple terms".to_string(),
+        Some("A clear, beginner-friendly explanation of AI".to_string()),
     );
-
-    match writing_agent.call(task1).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-        },
-        Err(e) => println!("❌ Error: {}", e),
+    
+    println!("\n📝 Executing task...");
+    println!("Task: {}", task.description);
+    
+    // Execute the task (now returns AgentResponse by default)
+    println!("\n📝 Executing task...");
+    let response = agent.call(task).await;
+    
+    if response.success {
+        println!("✅ Task completed successfully!");
+        println!("Response: {}", response.content);
+        println!("\n📊 Execution Metrics:");
+        println!("  - Execution time: {}ms", response.execution_time_ms);
+        println!("  - Input tokens: {}", response.input_tokens);
+        println!("  - Output tokens: {}", response.output_tokens);
+        println!("  - Total tokens: {}", response.total_tokens);
+        println!("  - Tokens per second: {:.2}", response.tokens_per_second());
+        println!("  - Model used: {}", response.model_used);
+        println!("  - Temperature: {}", response.temperature);
+        if !response.tools_used.is_empty() {
+            println!("  - Tools used: {:?}", response.tools_used);
+        }
+    } else {
+        println!("❌ Task failed: {}", response.error.unwrap_or("Unknown error".to_string()));
     }
-
-    // Example 2: Creative task
-    println!("\n🎨 Example 2: Creative Writing");
-    let task2 = Task::new(
-        "Write a short story opening about a robot who discovers emotions.".to_string(),
-        Some("An engaging story opening of 3-4 sentences.".to_string()),
-    );
-
-    match writing_agent.call(task2).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-        },
-        Err(e) => println!("❌ Error: {}", e),
+    
+    // Test string input method (now returns AgentResponse by default)
+    println!("\n🔤 Testing string input method...");
+    let str_response = agent.call_str("What are the benefits of using AI in everyday life?").await;
+    
+    if str_response.success {
+        println!("✅ String input successful!");
+        println!("Response: {}", str_response.content);
+        println!("\n📊 String Input Metrics:");
+        println!("  - Execution time: {}ms", str_response.execution_time_ms);
+        println!("  - Total tokens: {}", str_response.total_tokens);
+        println!("  - Tokens per second: {:.2}", str_response.tokens_per_second());
+    } else {
+        println!("❌ String input failed: {}", str_response.error.unwrap_or("Unknown error".to_string()));
     }
-
-    // Example 3: Problem-solving task
-    println!("\n🧠 Example 3: Problem Solving");
-    let task3 = Task::new(
-        "You have 3 apples and give away 1. Then someone gives you 2 more apples. How many apples do you have now? Explain your reasoning.".to_string(),
-        Some("Clear mathematical reasoning with the final answer.".to_string()),
-    );
-
-    match writing_agent.call(task3).await {
-        Ok(result) => {
-            println!("✅ Result:");
-            println!("{}", result);
-        },
-        Err(e) => println!("❌ Error: {}", e),
-    }
-
-    println!("\n🎉 Basic Agent Example Complete!");
+    
+    // Show agent performance metrics
+    println!("\n📊 Agent Performance Summary:");
+    let metrics = agent.get_performance_metrics();
+    println!("Total tasks: {}", metrics.total_tasks);
+    println!("Successful tasks: {}", metrics.successful_tasks);
+    println!("Failed tasks: {}", metrics.failed_tasks);
+    println!("Success rate: {:.2}%", agent.get_success_rate() * 100.0);
+    
+    println!("\n🎉 Basic agent example completed!");
     Ok(())
 }
