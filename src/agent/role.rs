@@ -54,7 +54,6 @@ impl AgentRole {
 pub struct AgentCapabilities {
     pub max_concurrent_tasks: usize,
     pub supported_output_formats: Vec<OutputFormat>,
-    pub processing_modes: Vec<ProcessingMode>,
 }
 
 // InputType simplified to just Text for now
@@ -72,12 +71,4 @@ pub enum OutputFormat {
     MultiModal,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ProcessingMode {
-    Sequential,
-    Parallel,
-    Streaming,
-    Batch,
-    RealTime,
-}
 

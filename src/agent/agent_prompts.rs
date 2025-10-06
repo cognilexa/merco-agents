@@ -21,8 +21,7 @@ impl Agent {
             - Role: {}\n\
             - Description: {}\n\
             - Max Concurrent Tasks: {}\n\
-            - Supported Output Formats: {:?}\n\
-            - Processing Modes: {:?}\n\n\
+            - Supported Output Formats: {:?}\n\n\
             You have access to the following tools: {}\n\n\
             Always follow the output format specified in the task and provide accurate, helpful responses.",
             self.name,
@@ -30,7 +29,6 @@ impl Agent {
             self.description,
             self.capabilities.max_concurrent_tasks,
             self.capabilities.supported_output_formats,
-            self.capabilities.processing_modes,
             self.tools.len()
         )
     }

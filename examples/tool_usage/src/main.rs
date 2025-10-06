@@ -1,4 +1,4 @@
-use merco_agents::{Agent, AgentModelConfig, OutputFormat, AgentRole, AgentCapabilities, ProcessingMode, Task, Provider, LlmConfig};
+use merco_agents::{Agent, AgentModelConfig, OutputFormat, AgentRole, AgentCapabilities, Task, Provider, LlmConfig};
 use merco_llmproxy::merco_tool;
 use merco_llmproxy::get_all_tools;
 use std::env;
@@ -82,7 +82,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capabilities = AgentCapabilities {
         max_concurrent_tasks: 1,
         supported_output_formats: vec![OutputFormat::Text, OutputFormat::Json],
-        processing_modes: vec![ProcessingMode::Sequential],
     };
     
     // Get all registered tools from the global registry

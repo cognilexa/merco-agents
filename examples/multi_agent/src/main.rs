@@ -1,4 +1,4 @@
-use merco_agents::{Agent, AgentModelConfig, OutputFormat, AgentRole, AgentCapabilities, ProcessingMode, Task, Provider, LlmConfig};
+use merco_agents::{Agent, AgentModelConfig, OutputFormat, AgentRole, AgentCapabilities, Task, Provider, LlmConfig};
 use std::env;
 
 #[tokio::main]
@@ -38,7 +38,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let capabilities = AgentCapabilities {
                 max_concurrent_tasks: 1,
                 supported_output_formats: vec![OutputFormat::Text, OutputFormat::Json],
-                processing_modes: vec![ProcessingMode::Sequential],
             };
             Agent::with_custom_role(
                 "Research Agent".to_string(),
@@ -59,7 +58,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let capabilities = AgentCapabilities {
                 max_concurrent_tasks: 1,
                 supported_output_formats: vec![OutputFormat::Json, OutputFormat::Markdown],
-                processing_modes: vec![ProcessingMode::Sequential],
             };
             Agent::with_custom_role(
                 "Analysis Agent".to_string(),
@@ -80,7 +78,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let capabilities = AgentCapabilities {
                 max_concurrent_tasks: 1,
                 supported_output_formats: vec![OutputFormat::Markdown, OutputFormat::Html],
-                processing_modes: vec![ProcessingMode::Sequential],
             };
             Agent::with_custom_role(
                 "Writing Agent".to_string(),

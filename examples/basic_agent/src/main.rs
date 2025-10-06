@@ -1,4 +1,4 @@
-use merco_agents::{Agent, AgentModelConfig, Task, OutputFormat, AgentRole, AgentCapabilities, ProcessingMode, Provider, LlmConfig};
+use merco_agents::{Agent, AgentModelConfig, Task, OutputFormat, AgentRole, AgentCapabilities, Provider, LlmConfig};
 use std::env;
 
 #[tokio::main]
@@ -35,7 +35,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capabilities = AgentCapabilities {
         max_concurrent_tasks: 1,
         supported_output_formats: vec![OutputFormat::Text],
-        processing_modes: vec![ProcessingMode::Sequential],
     };
     
     let mut agent = Agent::new(

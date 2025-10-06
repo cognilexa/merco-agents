@@ -1,4 +1,4 @@
-use merco_agents::{Agent, AgentModelConfig, OutputFormat, AgentRole, AgentCapabilities, ProcessingMode, Task, Provider, LlmConfig};
+use merco_agents::{Agent, AgentModelConfig, OutputFormat, AgentRole, AgentCapabilities, Task, Provider, LlmConfig};
 use merco_agents::task::task::{JsonField, JsonFieldType};
 use std::env;
 
@@ -48,7 +48,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let capabilities = AgentCapabilities {
             max_concurrent_tasks: 1,
             supported_output_formats: vec![format.clone()],
-            processing_modes: vec![ProcessingMode::Sequential],
         };
         
         let mut agent = Agent::new_with_output_format(
@@ -132,7 +131,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capabilities = AgentCapabilities {
         max_concurrent_tasks: 1,
         supported_output_formats: vec![OutputFormat::Json, OutputFormat::Markdown],
-        processing_modes: vec![ProcessingMode::Sequential],
     };
     
     let mut json_agent = Agent::new_with_output_format(
