@@ -1,7 +1,5 @@
-use merco_agents::agent::agent::{Agent, AgentLLMConfig};
-use merco_agents::agent::role::{OutputFormat, AgentRole, AgentCapabilities, ProcessingMode};
-use merco_agents::task::task::{Task, JsonField, JsonFieldType};
-use merco_llmproxy::LlmConfig;
+use merco_agents::{Agent, AgentModelConfig, OutputFormat, AgentRole, AgentCapabilities, ProcessingMode, Task, Provider, LlmConfig};
+use merco_agents::task::task::{JsonField, JsonFieldType};
 use std::env;
 
 #[tokio::main]
@@ -17,13 +15,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=======================");
     
     // Create LLM configuration
-    let llm_config = LlmConfig {
-        provider: merco_llmproxy::config::Provider::OpenAI,
-        base_url: Some("https://openrouter.ai/api/v1".to_string()),
-        api_key: Some(api_key),
-    };
+    let llm_config = LlmConfig::new_with_base_url(
+        Provider::OpenAI,
+        Some(api_key),
+        "https://openrouter.ai/api/v1".to_string(),
+    );
     
-    let agent_llm_config = AgentLLMConfig::new(
+    let agent_llm_config = AgentModelConfig::new(
         llm_config,
         "openai/gpt-4o-mini".to_string(),
         0.7,

@@ -1,7 +1,8 @@
 use crate::agent::role::{AgentRole, AgentCapabilities};
 use crate::agent::state::{AgentState, AgentContext};
 use crate::agent::output_handler::OutputHandler;
-use merco_llmproxy::{LlmConfig, LlmProvider, Tool};
+use crate::agent::provider::LlmConfig;
+use merco_llmproxy::{LlmProvider, Tool};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,7 +21,7 @@ pub struct Agent {
     pub capabilities: AgentCapabilities,
     
     // LLM Configuration
-    pub llm_config: AgentLLMConfig,
+    pub llm_config: AgentModelConfig,
     
     // Tools
     pub tools: Vec<Tool>,
@@ -38,21 +39,26 @@ pub struct Agent {
 
 /// LLM Configuration for agents
 #[derive(Debug, Clone)]
-pub struct AgentLLMConfig {
+pub struct AgentModelConfig {
     pub model_name: String,
     pub temperature: f32,
     pub max_tokens: u32,
-    pub original_config: LlmConfig,
+    pub llm_config: LlmConfig,
 }
 
-impl AgentLLMConfig {
+impl AgentModelConfig {
     pub fn new(llm_config: LlmConfig, model_name: String, temperature: f32, max_tokens: u32) -> Self {
         Self {
             model_name,
             temperature,
             max_tokens,
-            original_config: llm_config,
+            llm_config,
         }
+    }
+
+    /// Convert to merco_llmproxy LlmConfig
+    pub fn to_llmproxy_config(&self) -> merco_llmproxy::LlmConfig {
+        self.llm_config.to_llmproxy_config()
     }
 }
 

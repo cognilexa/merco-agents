@@ -1,9 +1,9 @@
-use crate::agent::agent::{Agent, AgentLLMConfig};
+use crate::agent::agent::{Agent, AgentModelConfig};
 use crate::agent::role::{AgentRole, AgentCapabilities, OutputFormat};
 use crate::agent::state::AgentState;
 use crate::agent::state::AgentContext;
 use crate::agent::output_handler::OutputHandler;
-use merco_llmproxy::{LlmConfig, Tool};
+use merco_llmproxy::Tool;
 
 impl Agent {
     /// Create a new basic Agent
@@ -11,11 +11,11 @@ impl Agent {
         name: String,
         description: String,
         role: AgentRole,
-        llm_config: AgentLLMConfig,
+        llm_config: AgentModelConfig,
         tools: Vec<Tool>,
         capabilities: AgentCapabilities,
     ) -> Self {
-        let provider = merco_llmproxy::get_provider(llm_config.clone().into()).unwrap();
+        let provider = merco_llmproxy::get_provider(llm_config.to_llmproxy_config()).unwrap();
         
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -37,12 +37,12 @@ impl Agent {
         name: String,
         description: String,
         role: AgentRole,
-        llm_config: AgentLLMConfig,
+        llm_config: AgentModelConfig,
         tools: Vec<Tool>,
         capabilities: AgentCapabilities,
         output_format: OutputFormat,
     ) -> Self {
-        let provider = merco_llmproxy::get_provider(llm_config.clone().into()).unwrap();
+        let provider = merco_llmproxy::get_provider(llm_config.to_llmproxy_config()).unwrap();
         
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -64,12 +64,12 @@ impl Agent {
         name: String,
         description: String,
         role: AgentRole,
-        llm_config: AgentLLMConfig,
+        llm_config: AgentModelConfig,
         tools: Vec<Tool>,
         capabilities: AgentCapabilities,
         output_format: Option<OutputFormat>,
     ) -> Self {
-        let provider = merco_llmproxy::get_provider(llm_config.clone().into()).unwrap();
+        let provider = merco_llmproxy::get_provider(llm_config.to_llmproxy_config()).unwrap();
         
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -91,12 +91,12 @@ impl Agent {
         name: String,
         description: String,
         role: AgentRole,
-        llm_config: AgentLLMConfig,
+        llm_config: AgentModelConfig,
         tools: Vec<Tool>,
         capabilities: AgentCapabilities,
         output_format: Option<OutputFormat>,
     ) -> Self {
-        let provider = merco_llmproxy::get_provider(llm_config.clone().into()).unwrap();
+        let provider = merco_llmproxy::get_provider(llm_config.to_llmproxy_config()).unwrap();
         
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -114,9 +114,9 @@ impl Agent {
     }
 }
 
-// Helper trait to convert AgentLLMConfig to LlmConfig
-impl From<AgentLLMConfig> for LlmConfig {
-    fn from(config: AgentLLMConfig) -> Self {
-        config.original_config
+// Helper trait to convert AgentModelConfig to merco_llmproxy LlmConfig
+impl From<AgentModelConfig> for merco_llmproxy::LlmConfig {
+    fn from(config: AgentModelConfig) -> Self {
+        config.to_llmproxy_config()
     }
 }

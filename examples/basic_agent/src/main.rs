@@ -1,6 +1,4 @@
-use merco_agents::agent::agent::{Agent, AgentLLMConfig};
-use merco_agents::task::task::Task;
-use merco_llmproxy::LlmConfig;
+use merco_agents::{Agent, AgentModelConfig, Task, OutputFormat, AgentRole, AgentCapabilities, ProcessingMode, Provider, LlmConfig};
 use std::env;
 
 #[tokio::main]
@@ -16,13 +14,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=====================");
     
     // Create LLM configuration
-    let llm_config = LlmConfig {
-        provider: merco_llmproxy::config::Provider::OpenAI,
-        api_key: Some(api_key),
-        base_url: Some("https://openrouter.ai/api/v1".to_string()),
-    };
+    let llm_config = LlmConfig::new_with_base_url(
+        Provider::OpenAI,
+        Some(api_key),
+        "https://openrouter.ai/api/v1".to_string(),
+    );
     
-    let agent_llm_config = AgentLLMConfig::new(
+    let agent_llm_config = AgentModelConfig::new(
         llm_config,
         "openai/gpt-4o-mini".to_string(),
         0.7,
@@ -30,15 +28,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     
     // Create a basic agent
-    let mut agent = Agent::new(
-        agent_llm_config,
+    let role = AgentRole::new(
+        "AI Assistant".to_string(),
         "You are a helpful AI assistant that provides clear and concise answers.".to_string(),
-        vec![
-            "Help users with their questions".to_string(),
-            "Provide accurate information".to_string(),
-            "Be friendly and professional".to_string(),
-        ],
+    );
+    let capabilities = AgentCapabilities {
+        max_concurrent_tasks: 1,
+        supported_output_formats: vec![OutputFormat::Text],
+        processing_modes: vec![ProcessingMode::Sequential],
+    };
+    
+    let mut agent = Agent::new(
+        "AI Assistant".to_string(),
+        "A helpful AI assistant that provides clear and concise answers".to_string(),
+        role,
+        agent_llm_config,
         vec![], // No tools for this basic example
+        capabilities,
     );
     
     println!("✅ Agent created successfully!");
