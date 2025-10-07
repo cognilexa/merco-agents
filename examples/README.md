@@ -1,169 +1,175 @@
-# Merco-Agents Examples
+# Streaming Tool Call Examples
 
-This directory contains comprehensive examples demonstrating the capabilities of the Merco-Agents library.
+This directory contains comprehensive examples demonstrating the streaming tool call capabilities of the `merco-agents` library.
 
 ## 🚀 Quick Start
 
 1. **Set up your environment:**
    ```bash
    # Copy the environment template
-   cp basic_agent/env_template .env
+   cp examples/basic_streaming_tools/env_template examples/basic_streaming_tools/.env
    
-   # Edit .env and add your API key
-   OPENROUTER_API_KEY=your_openrouter_api_key_here
+   # Add your API key to the .env file
+   echo "OPENROUTER_API_KEY=your_api_key_here" >> examples/basic_streaming_tools/.env
    ```
 
 2. **Run an example:**
    ```bash
-   cd basic_agent
+   cd examples/basic_streaming_tools
    cargo run
    ```
 
-## 📚 Available Examples
+## 📁 Examples Overview
 
-### 1. Basic Agent (`basic_agent/`)
-**Purpose**: Introduction to basic agent functionality
+### 1. Basic Streaming Tools (`basic_streaming_tools/`)
+**Purpose:** Simple introduction to streaming tool calls
+- ✅ Basic tool call execution
+- ✅ Simple streaming handler
+- ✅ Multiple tool calls in sequence
+- **Best for:** Learning the basics
 
-**Features Demonstrated**:
-- Creating a simple agent
-- Basic task execution
-- String input method (`call_str`)
-- Performance metrics
-- Agent state management
+### 2. Advanced Streaming Tools (`advanced_streaming_tools/`)
+**Purpose:** Advanced features with custom handlers
+- ✅ Colored output and detailed logging
+- ✅ Custom streaming handler with statistics
+- ✅ Complex multi-tool scenarios
+- ✅ Real-time progress indicators
+- **Best for:** Production applications
 
-**Run**: `cd basic_agent && cargo run`
+### 3. Error Handling (`streaming_error_handling/`)
+**Purpose:** Testing error resilience and edge cases
+- ✅ Error tracking and reporting
+- ✅ Edge case handling
+- ✅ Ambiguous request handling
+- ✅ Performance under stress
+- **Best for:** Testing robustness
 
-### 2. Output Formats (`output_formats/`)
-**Purpose**: Demonstrates configurable output formats
+### 4. Performance Testing (`streaming_performance_test/`)
+**Purpose:** Performance monitoring and optimization
+- ✅ Execution time tracking
+- ✅ Throughput measurement
+- ✅ Performance ratings
+- ✅ Stress testing
+- **Best for:** Performance optimization
 
-**Features Demonstrated**:
-- Text, JSON, Markdown, and HTML output formats
-- Agent format configuration
-- Task format override
-- Format-specific validation
-- Format-specific LLM instructions
+## 🔧 Key Features Demonstrated
 
-**Run**: `cd output_formats && cargo run`
-
-### 3. Tool Usage (`tool_usage/`)
-**Purpose**: Shows how to integrate custom tools with agents
-
-**Features Demonstrated**:
-- Custom tool creation and registration
-- Mathematical calculation tools
-- Weather information tools
-- Time retrieval tools
-- Tool parameter validation
-- Agent-tool interaction
-
-**Run**: `cd tool_usage && cargo run`
-
-### 4. Multi-Agent (`multi_agent/`)
-**Purpose**: Demonstrates multi-agent collaboration
-
-**Features Demonstrated**:
-- Specialized agent roles
-- Agent collaboration setup
-- Sequential task processing
-- Parallel task execution
-- Cross-agent communication
-- Performance tracking per agent
-
-**Run**: `cd multi_agent && cargo run`
-
-## 🔧 Example Structure
-
-Each example follows this structure:
+### Streaming Tool Call Flow
 ```
-example_name/
-├── Cargo.toml          # Dependencies
-├── src/main.rs         # Example code
-├── env_template        # Environment variables template
-└── README.md          # Example-specific documentation
+1. Text streams → Real-time display
+2. Tool call detected → "[🔧 Tool Call (Index N)]"
+3. Function info → "Function: name\n   Arguments: {...}"
+4. JSON validation → Check if complete
+5. If complete → "✓ Arguments complete, executing..."
+6. Execute tool → Real-time execution
+7. Stream result → "📤 Result: {...}"
+8. Continue conversation → LLM gets tool results
 ```
 
-## 🛠️ Prerequisites
-
-- **Rust**: Latest stable version
-- **API Key**: OpenRouter API key for LLM access
-- **Dependencies**: All examples use the same core dependencies
-
-## 📋 Common Patterns
-
-### Basic Agent Creation
+### Custom Streaming Handlers
 ```rust
-let mut agent = Agent::new(
-    llm_config,
-    "Your agent description".to_string(),
-    vec!["Goal 1".to_string(), "Goal 2".to_string()],
-    vec![], // tools
-);
+impl StreamingHandler for MyHandler {
+    fn handle_chunk(&self, chunk: StreamingChunk) {
+        // Handle streaming content
+    }
+    
+    fn handle_tool_calls(&self, tool_calls: Vec<ToolCall>) {
+        // Handle tool execution results
+    }
+    
+    fn handle_final(&self, response: StreamingResponse) {
+        // Handle completion
+    }
+    
+    fn handle_error(&self, error: String) {
+        // Handle errors
+    }
+}
 ```
 
-### Task Execution
-```rust
-let task = Task::new(
-    "Your task description".to_string(),
-    Some("Expected output description".to_string()),
-);
+## 🎯 Testing Scenarios
 
-let result = agent.call(task).await?;
-```
+### Basic Tests
+- Simple weather queries
+- Single tool execution
+- Basic error handling
 
-### Output Format Configuration
-```rust
-let agent = Agent::new_with_output_format(
-    llm_config,
-    backstory,
-    goals,
-    tools,
-    OutputFormat::Json, // or Text, Markdown, Html
-);
-```
+### Advanced Tests
+- Multi-city weather queries
+- Sequential tool calls
+- Complex travel planning
+- Real-time progress tracking
 
-### Tool Integration
-```rust
-let tools = vec![
-    Tool {
-        function: ToolFunction {
-            name: "my_tool".to_string(),
-            description: "Tool description".to_string(),
-            parameters: tool_parameters,
-        },
-    },
-];
+### Stress Tests
+- Multiple simultaneous tool calls
+- Long-running conversations
+- Error recovery
+- Performance monitoring
 
-// Register the tool function
-merco_llmproxy::register_tool!("my_tool", my_tool_function);
-```
+## 📊 Performance Metrics
 
-## 🎯 Learning Path
+The examples track:
+- **Chunk processing time** - How fast content streams
+- **Tool execution time** - How fast tools run
+- **Throughput** - Chunks and tools per second
+- **Success rates** - Error handling effectiveness
+- **Memory usage** - Resource efficiency
 
-1. **Start with Basic Agent** - Understand core concepts
-2. **Try Output Formats** - Learn about format configuration
-3. **Explore Tool Usage** - Add external capabilities
-4. **Master Multi-Agent** - Coordinate multiple agents
+## 🛠️ Available Tools
 
-## 🐛 Troubleshooting
+The examples use these tools:
+- `get_weather(location, unit)` - Weather information
+- `web_search(query)` - Web search
+- `calculate(expression)` - Mathematical calculations
 
-### Common Issues
+## 🔍 Debugging Tips
 
-1. **API Key Error**: Make sure `OPENROUTER_API_KEY` is set in your `.env` file
-2. **Compilation Errors**: Ensure you're in the correct example directory
-3. **Tool Registration**: Make sure tool functions are registered before use
+1. **Check API keys** - Ensure your API key is set correctly
+2. **Monitor logs** - Watch for tool execution messages
+3. **Verify JSON** - Tool arguments must be valid JSON
+4. **Check network** - Streaming requires stable connection
+5. **Review errors** - Error handlers show detailed information
 
-### Getting Help
+## 🚨 Common Issues
 
-- Check the main library documentation
-- Review the example source code
-- Ensure all dependencies are properly installed
+### Tool Calls Not Executing
+- Check if JSON arguments are complete
+- Verify tool names match exactly
+- Ensure API key has tool access
 
-## 🚀 Next Steps
+### Streaming Stops
+- Check network connection
+- Verify API rate limits
+- Review error messages
 
-After running the examples:
-1. Modify the examples to suit your needs
-2. Create your own custom agents
-3. Integrate with your existing applications
-4. Explore advanced features like memory and state management
+### Performance Issues
+- Monitor chunk processing times
+- Check tool execution times
+- Review throughput metrics
 
-Happy coding! 🎉
+## 📈 Optimization Tips
+
+1. **Batch tool calls** when possible
+2. **Use appropriate timeouts** for tools
+3. **Monitor memory usage** during long streams
+4. **Implement retry logic** for failed tools
+5. **Cache tool results** when appropriate
+
+## 🔗 Related Documentation
+
+- [Streaming API Documentation](../../src/agent/streaming.rs)
+- [Agent Execution Documentation](../../src/agent/agent_execution.rs)
+- [Tool Call Documentation](../../src/agent/agent.rs)
+
+## 🤝 Contributing
+
+To add new examples:
+1. Create a new directory under `examples/`
+2. Add `Cargo.toml` with dependencies
+3. Implement your example in `src/main.rs`
+4. Add an `env_template` file
+5. Update this README
+
+## 📝 License
+
+These examples are part of the `merco-agents` project and follow the same license terms.

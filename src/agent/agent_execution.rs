@@ -1,10 +1,16 @@
 use crate::task::task::Task;
 use merco_llmproxy::{
     ChatMessage, CompletionKind, CompletionRequest,
-    execute_tool, traits::ChatMessageRole,
+    execute_tool, traits::ChatMessageRole, StreamContentDelta,
 };
+use futures_util::StreamExt;
+use futures::stream::Stream;
+use std::pin::Pin;
+use async_stream::stream;
 
 use crate::agent::agent::{Agent, AgentResponse};
+use crate::agent::streaming::{StreamingChunk, StreamingHandler, DefaultStreamingHandler};
+use serde_json;
 
 impl Agent {
     /// Execute a task and return comprehensive response with metrics
@@ -263,4 +269,254 @@ impl Agent {
             response.total_tokens,
         );
     }
+
+    // ===== STREAMING METHODS =====
+
+    /// Execute a task with streaming response - returns a stream of chunks
+    pub async fn call_stream(&mut self, task: Task) -> Pin<Box<dyn Stream<Item = Result<StreamingChunk, String>> + Send + '_>> {
+        let handler = DefaultStreamingHandler;
+        self.call_stream_with_handler(task, handler).await
+    }
+
+    /// Execute a task with streaming response and custom handler - FULL tool call support
+    pub async fn call_stream_with_handler<H: StreamingHandler + Send + Sync + 'static>(
+        &mut self, 
+        task: Task, 
+        handler: H
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamingChunk, String>> + Send + 'static>> {
+        let messages = self.build_initial_messages(&task);
+        let provider = self.provider.clone();
+        let llm_config = self.llm_config.clone();
+        let tools = self.tools.clone();
+        
+        Box::pin(stream! {
+            let mut current_messages = messages;
+            let mut accumulated_content = String::new();
+            let mut total_tokens = 0;
+            let mut tools_used = Vec::new();
+            let mut all_tool_calls = Vec::new();
+            
+            loop {
+                let request = CompletionRequest::new(
+                    current_messages.clone(),
+                    llm_config.model_name.clone(),
+                    Some(llm_config.temperature),
+                    Some(llm_config.max_tokens),
+                    Some(tools.clone()),
+                );
+
+                match provider.completion_stream(request).await {
+                    Ok(mut stream) => {
+                        let mut has_tool_calls = false;
+                        let mut pending_tool_calls = Vec::new();
+                        
+                        while let Some(chunk_result) = stream.next().await {
+                            match chunk_result {
+                                Ok(chunk) => {
+                                    match chunk.delta {
+                                        StreamContentDelta::Text(text) => {
+                                            accumulated_content.push_str(&text);
+                                            
+                                            let streaming_chunk = StreamingChunk::new(
+                                                text,
+                                                false,
+                                                accumulated_content.clone(),
+                                            );
+                                            
+                                            handler.handle_chunk(streaming_chunk.clone());
+                                            yield Ok(streaming_chunk);
+                                        }
+                                        StreamContentDelta::ToolCallDelta(tool_call_deltas) => {
+                                            // Handle streaming tool calls - accumulate deltas
+                                            has_tool_calls = true;
+                                            
+                                            for delta in tool_call_deltas {
+                                                // Check if we have complete function info
+                                                if let Some(func) = &delta.function {
+                                                    if let (Some(name), Some(args)) = (&func.name, &func.arguments) {
+                                                        // Check if this is the first time we see this tool call
+                                                        let is_new_tool_call = !tools_used.contains(name);
+                                                        
+                                                        if is_new_tool_call {
+                                                            // Tool call is starting
+                                                            if let Some(call_id) = &delta.id {
+                                                                handler.handle_tool_call_start(name.clone(), call_id.clone());
+                                                            }
+                                                        }
+                                                        
+                                                        // Always stream the current arguments (even if partial)
+                                                        if let Some(call_id) = &delta.id {
+                                                            handler.handle_tool_call_streaming(
+                                                                name.clone(), 
+                                                                call_id.clone(), 
+                                                                args.clone()
+                                                            );
+                                                        }
+                                                        
+                                                        // Check if JSON is complete before executing
+                                                        if args.starts_with('{') && args.ends_with('}') {
+                                                            match serde_json::from_str::<serde_json::Value>(args) {
+                                                                Ok(_) => {
+                                                                    // JSON is valid and complete - ready to execute
+                                                                    if let Some(call_id) = &delta.id {
+                                                                        handler.handle_tool_call_ready(
+                                                                            name.clone(), 
+                                                                            call_id.clone(), 
+                                                                            args.clone()
+                                                                        );
+                                                                    }
+                                                                    
+                                                                    tools_used.push(name.clone());
+                                                                    
+                                                                    // Execute the tool
+                                                                    let tool_start = std::time::Instant::now();
+                                                                    let (tool_result_content, tool_error) = match execute_tool(name, args) {
+                                                                        Ok(result) => (result, None),
+                                                                        Err(e) => {
+                                                                            eprintln!("Tool Execution Error: {}", e);
+                                                                            (String::new(), Some(e))
+                                                                        }
+                                                                    };
+                                                                    let tool_execution_time = tool_start.elapsed().as_millis() as u64;
+                                                                    
+                                                                    // Notify that tool execution is complete
+                                                                    if let Some(call_id) = &delta.id {
+                                                                        handler.handle_tool_call_executed(
+                                                                            name.clone(),
+                                                                            call_id.clone(),
+                                                                            tool_result_content.clone(),
+                                                                            tool_execution_time
+                                                                        );
+                                                                    }
+                                                                    
+                                                                    // Create detailed tool call information
+                                                                    let tool_call = if let Some(error) = tool_error {
+                                                                        crate::agent::agent::ToolCall::with_error(
+                                                                            name.clone(),
+                                                                            args.clone(),
+                                                                            error,
+                                                                            tool_execution_time,
+                                                                            "text".to_string(),
+                                                                        )
+                                                                    } else {
+                                                                        crate::agent::agent::ToolCall::new(
+                                                                            name.clone(),
+                                                                            args.clone(),
+                                                                            tool_result_content.clone(),
+                                                                            tool_execution_time,
+                                                                            "text".to_string(),
+                                                                        )
+                                                                    };
+                                                                    all_tool_calls.push(tool_call);
+                                                                    
+                                                                    // Store for adding to conversation after stream completes
+                                                                    pending_tool_calls.push((delta.id.clone(), tool_result_content));
+                                                                }
+                                                                Err(_) => {
+                                                                    // JSON not complete yet - continue streaming
+                                                                    // No need to log anything, just continue
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    // Handle usage statistics if available
+                                    if let Some(usage) = chunk.usage {
+                                        total_tokens = usage.total_tokens;
+                                    }
+                                    
+                                    // Handle finish reason
+                                    if let Some(reason) = chunk.finish_reason {
+                                        if has_tool_calls && !pending_tool_calls.is_empty() {
+                                            // Add tool results to conversation and continue
+                                            let tool_calls_to_add = pending_tool_calls.clone();
+                                            pending_tool_calls.clear(); // Clear for next iteration
+                                            
+                                            for (tool_call_id, tool_result) in tool_calls_to_add {
+                                                current_messages.push(ChatMessage::new(
+                                                    ChatMessageRole::Tool,
+                                                    Some(tool_result),
+                                                    None,
+                                                    tool_call_id,
+                                                ));
+                                            }
+                                            
+                                            // Notify handler about all tool calls
+                                            handler.handle_tool_calls(all_tool_calls.clone());
+                                            
+                                            // Reset for next iteration
+                                            accumulated_content.clear();
+                                            has_tool_calls = false;
+                                            all_tool_calls.clear();
+                                            
+                                            // Continue the conversation with tool results
+                                            continue;
+                                        } else {
+                                            // No tool calls, finish normally
+                                            let final_chunk = StreamingChunk::final_chunk(
+                                                String::new(),
+                                                accumulated_content.clone(),
+                                                chunk.usage.map(|u| crate::agent::streaming::StreamingUsage {
+                                                    prompt_tokens: u.prompt_tokens,
+                                                    completion_tokens: u.completion_tokens,
+                                                    total_tokens: u.total_tokens,
+                                                }),
+                                                Some(reason),
+                                            );
+                                            
+                                            handler.handle_chunk(final_chunk.clone());
+                                            yield Ok(final_chunk);
+                                            return;
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    yield Err(format!("Stream error: {}", e));
+                                    return;
+                                }
+                            }
+                        }
+                        
+                        // If we exit the loop without a finish reason, return the accumulated content
+                        if !has_tool_calls {
+                            let final_chunk = StreamingChunk::final_chunk(
+                                String::new(),
+                                accumulated_content.clone(),
+                                None,
+                                None,
+                            );
+                            handler.handle_chunk(final_chunk.clone());
+                            yield Ok(final_chunk);
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        yield Err(format!("Failed to start streaming: {}", e));
+                        return;
+                    }
+                }
+            }
+        })
+    }
+
+    /// Simple string input method with streaming - returns a stream of chunks
+    pub async fn call_str_stream(&mut self, input: &str) -> Pin<Box<dyn Stream<Item = Result<StreamingChunk, String>> + Send + '_>> {
+        let task = Task::new(input.to_string(), None);
+        self.call_stream(task).await
+    }
+
+    /// Simple string input method with streaming and custom handler - returns a stream of chunks
+    pub async fn call_str_stream_with_handler<H: StreamingHandler + Send + Sync + 'static>(
+        &mut self, 
+        input: &str, 
+        handler: H
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamingChunk, String>> + Send + 'static>> {
+        let task = Task::new(input.to_string(), None);
+        self.call_stream_with_handler(task, handler).await
+    }
+
 }

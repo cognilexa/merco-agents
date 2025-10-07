@@ -19,6 +19,11 @@ thiserror = "1.0"
 # HTTP client for potential future use
 reqwest = { version = "0.11", features = ["json"] }
 
+# Streaming support
+futures-util = "0.3"
+async-stream = "0.3"
+futures = "0.3"
+
 [dev-dependencies]
 tempfile = "3.8"
 tokio-test = "0.4"

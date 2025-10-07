@@ -14,4 +14,7 @@ pub use agent::AgentRole;
 pub use agent::AgentCapabilities;
 pub use agent::Provider;
 pub use agent::LlmConfig;
+pub use agent::StreamingHandler;
+pub use agent::StreamingChunk;
+pub use agent::StreamingResponse;
 pub use task::task::Task;

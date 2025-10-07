@@ -1,0 +1,10 @@
+# Copy this file to .env and fill in your API keys
+
+# OpenAI API Key (if using OpenAI directly)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# OpenRouter API Key (recommended for better model access)
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+
+# Anthropic API Key (if using Claude)
+ANTHROPIC_API_KEY=your_anthropic_api_key_here

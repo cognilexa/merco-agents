@@ -1,0 +1,13 @@
+[package]
+name = "basic_streaming"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "basic_streaming"
+path = "src/main.rs"
+
+[dependencies]
+merco-agents = { path = "../../" }
+tokio = { version = "1.41.1", features = ["full"] }
+dotenv = "0.15"

@@ -7,6 +7,7 @@ pub mod agent_execution;
 pub mod agent_management;
 pub mod agent_prompts;
 pub mod provider;
+pub mod streaming;
 
 // Re-export main types for easier access
 pub use agent::Agent;
@@ -19,3 +20,4 @@ pub use role::*;
 pub use state::*;
 pub use output_handler::*;
 pub use provider::*;
+pub use streaming::*;
